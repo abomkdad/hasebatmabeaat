@@ -87,10 +87,26 @@
       padding: 20px;
       font-size: 16px;
       line-height: 1.8;
+      white-space: pre-line;
     }
     @media (max-width: 600px) {
       h1 { font-size: 22px; }
       .payer-buttons button { font-size: 12px; padding: 5px; }
+    }
+    @media print {
+      body * { visibility: hidden; }
+      .summary, .summary * {
+        visibility: visible;
+      }
+      .summary {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        margin: 0;
+        padding: 20px;
+        border: none;
+      }
     }
   </style>
 </head>
@@ -121,128 +137,108 @@
   </div>
 
   <script>
-    const expensePayers = {};
-    const madDetails = [];
-    const partnerDetails = [];
-    let madPaid = 0, partnerPaid = 0;
-    const expenses = [
-      { id: 'custom', label: '🧾 مصروف مخصص', custom: true },
-      { id: 'water', label: '🚿 مياه' },
-      { id: 'internet', label: '🌐 إنترنت' },
-      { id: 'maintenance', label: '🛠 صيانة المحل' },
-      { id: 'staff', label: '👥 أجرة الموظفين' },
-      { id: 'phone', label: '📱 فاتورة الهاتف' },
-      { id: 'rent', label: '🏪 أجرة المحل' },
-      { id: 'arnona', label: '🏙 أرنونا' },
-      { id: 'electricity', label: '💡 كهرباء' },
-      { id: 'cashMachine', label: '🖨 ماكينة الكاش' },
-      { id: 'ads', label: '📢 إعلانات ممولة' },
-      { id: 'accountant', label: '🧾 محاسب وتأمين وضريبة' },
+    const expenseList = [
+      'أجرة الموظفين',
+      'فاتورة الهاتف',
+      'أجرة المحل',
+      'أرنونا',
+      'كهرباء',
+      'ماكينة الكاش',
+      'إعلانات ممولة',
+      'محاسب / تأمين / ضريبة',
+      'مخصص آخر'
     ];
 
-    const container = document.getElementById('expensesContainer');
-    container.innerHTML = '';
-    expenses.forEach(exp => {
-      const group = document.createElement('div');
-      group.className = 'field-group';
+    const expensesContainer = document.getElementById('expensesContainer');
+
+    expenseList.forEach((labelText, index) => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'field-group';
 
       const label = document.createElement('label');
-      label.textContent = `${exp.label} (₪):`;
+      label.textContent = `💼 ${labelText} (₪):`;
+      wrapper.appendChild(label);
 
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.id = exp.id;
-      input.placeholder = 'مثال: 0';
+      const amountInput = document.createElement('input');
+      amountInput.type = 'number';
+      amountInput.placeholder = 'مثال: 500';
+      amountInput.id = `amount_${index}`;
+      wrapper.appendChild(amountInput);
 
-      if (exp.custom) {
-        const descInput = document.createElement('input');
-        descInput.type = 'text';
-        descInput.placeholder = 'وصف المصروف';
-        descInput.id = 'customDesc';
-        descInput.style.marginTop = '8px';
-        group.appendChild(descInput);
-      }
+      const descInput = document.createElement('input');
+      descInput.type = 'text';
+      descInput.placeholder = 'وصف المصروف (اختياري)';
+      descInput.id = `desc_${index}`;
+      wrapper.appendChild(descInput);
 
-      const payerDiv = document.createElement('div');
-      payerDiv.className = 'payer-buttons';
-      payerDiv.setAttribute('data-id', `${exp.id}-payer`);
+      const payerBtns = document.createElement('div');
+      payerBtns.className = 'payer-buttons';
 
-      ['mad', 'partner', 'both'].forEach(p => {
+      ['MAD', 'الشريك', 'من كوباه'].forEach(payer => {
         const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = p === 'mad' ? 'MAD' : p === 'partner' ? 'الشريك' : 'من كوباه';
-        btn.onclick = () => selectPayer(exp.id, p, btn);
-        payerDiv.appendChild(btn);
+        btn.textContent = payer;
+        btn.onclick = () => {
+          [...payerBtns.children].forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        };
+        payerBtns.appendChild(btn);
       });
 
-      group.appendChild(label);
-      group.appendChild(input);
-      group.appendChild(payerDiv);
-      container.appendChild(group);
+      wrapper.appendChild(payerBtns);
+      expensesContainer.appendChild(wrapper);
     });
 
-    function selectPayer(field, payer, btn) {
-      expensePayers[field] = payer;
-      document.querySelectorAll(`[data-id='${field}-payer'] button`).forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    }
-
     function calculate() {
-      const get = id => parseFloat(document.getElementById(id).value) || 0;
-      const cashSales = get('cashSales');
-      const cardSales = get('cardSales');
-      const revenue = cashSales + cardSales;
-      let expensesTotal = 0;
-      madPaid = 0;
-      partnerPaid = 0;
-      madDetails.length = 0;
-      partnerDetails.length = 0;
+      const cash = parseFloat(document.getElementById("cashSales").value) || 0;
+      const card = parseFloat(document.getElementById("cardSales").value) || 0;
+      const totalSales = cash + card;
 
-      expenses.forEach(exp => {
-        const value = get(exp.id);
-        expensesTotal += value;
-        const payer = expensePayers[exp.id] || 'both';
-        const label = exp.label.replace(/[^ء-يa-zA-Z0-9\s]/g, '').trim();
-        if (payer === 'mad') {
-          madPaid += value;
-          if (value > 0) madDetails.push(`${label} ₪${value}`);
-        }
-        else if (payer === 'partner') {
-          partnerPaid += value;
-          if (value > 0) partnerDetails.push(`${label} ₪${value}`);
-        }
+      let totalExpenses = 0, madPaid = 0, partnerPaid = 0, kobahPaid = 0;
+      let details = [];
+
+      expenseList.forEach((_, i) => {
+        const amount = parseFloat(document.getElementById(`amount_${i}`).value) || 0;
+        const desc = document.getElementById(`desc_${i}`).value || expenseList[i];
+        const payer = document.querySelector(`#amount_${i}`).parentElement.querySelector('.payer-buttons button.active')?.textContent;
+
+        totalExpenses += amount;
+        if (payer === 'MAD') madPaid += amount;
+        else if (payer === 'الشريك') partnerPaid += amount;
+        else if (payer === 'من كوباه') kobahPaid += amount;
+
+        if (payer) details.push(`🔹 ${desc}: ₪${amount.toFixed(2)} (${payer})`);
       });
 
-      const netProfit = revenue - expensesTotal;
-      const partnerShare = netProfit / 2;
-      const madFinal = partnerShare + madPaid;
-      const partnerFinal = partnerShare + partnerPaid;
-      const customDesc = document.getElementById('customDesc')?.value || '';
+      const netProfit = totalSales - totalExpenses;
+      const shareEach = netProfit / 2;
+      const madFinal = shareEach - madPaid;
+      const partnerFinal = shareEach - partnerPaid;
 
-      const output = `
-        💰 <strong>إجمالي المبيعات:</strong> ₪${revenue.toFixed(2)}<br><br>
-        💸 <strong>إجمالي المصاريف:</strong> ₪${expensesTotal.toFixed(2)}<br><br>
-        ✅ <strong>مجموع بيع الشهر بعد المصاريف:</strong> ₪${netProfit.toFixed(2)}<br><br>
-        👥 <strong>نصيب كل شريك (50٪):</strong> ₪${partnerShare.toFixed(2)}<br><br>
-        💳 <strong>ما دفعته MAD:</strong> ₪${madPaid.toFixed(2)}<br>${madDetails.join('<br>')}<br><br>
-        🤝 <strong>ما دفعه الشريك:</strong> ₪${partnerPaid.toFixed(2)}<br>${partnerDetails.join('<br>')}<br><br>
-        💼 <strong>حصة MAD بعد المصاريف:</strong> ₪${madFinal.toFixed(2)}<br>
-        👤 <strong>حصة الشريك بعد المصاريف:</strong> ₪${partnerFinal.toFixed(2)}
-        ${customDesc ? `<br><br>📝 <strong>وصف المصروف المخصص:</strong> ${customDesc}` : ''}`;
+      const today = new Date().toLocaleDateString('he-IL');
+      const msg = `📅 التاريخ: ${today}
+💰 مجموع المبيعات: ₪${totalSales.toFixed(2)}
+💸 مجموع المصاريف: ₪${totalExpenses.toFixed(2)}
+📦 بيع الشهر بعد المصاريف: ₪${netProfit.toFixed(2)}
+👥 نصيب كل شريك (50٪): ₪${shareEach.toFixed(2)}
 
-      const outputDiv = document.getElementById('output');
-      outputDiv.innerHTML = output;
-      outputDiv.style.display = 'block';
+💳 ما دفعته MAD: ₪${madPaid.toFixed(2)}
+🤝 ما دفعه الشريك: ₪${partnerPaid.toFixed(2)}
+🧾 ما دفع من الكوباه: ₪${kobahPaid.toFixed(2)}
+
+💼 حصة MAD بعد المصاريف: ₪${madFinal.toFixed(2)}
+👤 حصة الشريك بعد المصاريف: ₪${partnerFinal.toFixed(2)}
+
+🧾 تفاصيل المصاريف:
+${details.join("\n")}`;
+
+      document.getElementById("output").style.display = "block";
+      document.getElementById("output").innerText = msg;
     }
 
     function sendWhatsApp() {
-      const now = new Date();
-      const dateStr = now.toLocaleDateString('he-IL');
-      const customMsg = `📊 تقرير شهري\n📅 التاريخ: ${dateStr}\n` +
-        `💳 ما دفعته MAD: ₪${madPaid.toFixed(2)}\n${madDetails.join('\n')}\n` +
-        `🤝 ما دفعه الشريك: ₪${partnerPaid.toFixed(2)}\n${partnerDetails.join('\n')}\n\n` +
-        document.getElementById('output').innerText;
-      const url = `https://wa.me/?text=${encodeURIComponent(customMsg)}`;
+      const text = document.getElementById("output").innerText;
+      if (!text) return alert("يرجى الضغط على زر الحساب أولاً.");
+      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
       window.open(url, '_blank');
     }
   </script>
